@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLACK BOX DRONE | Mission Control</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #f39c12; /* Aviation Orange */
+            --bg: #0f172a;      /* Deep Slate */
+            --card: #1e293b;    /* Card BG */
+            --text: #f8fafc;
+            --accent: #38bdf8;  /* Sky Blue */
+            --success: #22c55e;
+            --warning: #f1c40f;
+            --danger: #ef4444;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        nav {
+            background: var(--card);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 3px solid var(--primary);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+
+        .status-badge {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--success);
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            border: 1px solid var(--success);
+            font-weight: bold;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 20px;
+            padding: 20px;
+            overflow: hidden;
+            flex-grow: 1;
+        }
+
+        .main-panel { overflow-y: auto; padding-right: 5px; }
+
+        .card {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid #334155;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 15px;
+        }
+
+        .stat-box {
+            background: #0f172a;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            border-top: 3px solid var(--primary);
+        }
+
+        .stat-box small { color: #94a3b8; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; }
+        .stat-box .value { font-size: 1.6rem; font-weight: bold; color: #fff; display: block; margin-top: 5px; }
+
+        /* BATTERY UI - SLOW COUNTDOWN STYLING */
+        .battery-ui { text-align: center; }
+        .battery-bar {
+            width: 100%;
+            height: 30px;
+            background: #334155;
+            border-radius: 8px;
+            margin: 15px 0;
+            border: 1px solid #475569;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #batt-fill { 
+            height: 100%; 
+            width: 100%; 
+            background: var(--success); 
+            transition: width 1s linear, background-color 1s ease; 
+        }
+
+        /* Live Data Sheet (Table) */
+        .sheet-wrapper {
+            max-height: 250px;
+            overflow-y: auto;
+            border-radius: 8px;
+            background: #0f172a;
+        }
+
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th { background: #1e293b; color: var(--accent); padding: 12px; text-align: left; position: sticky; top: 0; border-bottom: 2px solid #334155; }
+        td { padding: 10px; border-bottom: 1px solid #334155; }
+        tr:hover { background: rgba(255,255,255,0.05); }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            margin-top: 10px;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: 0.3s;
+        }
+        .btn-download { background: var(--primary); color: #000; }
+        .btn-download:hover { background: #e67e22; transform: scale(1.02); }
+        .btn-clear { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
+        .btn-clear:hover { background: var(--danger); color: #fff; }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
+    </style>
+</head>
+<body>
+
+<nav>
+    <div><h2 style="margin:0;">BLACK BOX <span style="font-weight: 300; color: var(--primary);">DRONE</span></h2></div>
+    <div class="status-badge" id="mission-status">● MISSION ACTIVE</div>
+</nav>
+
+<div class="container">
+    <div class="main-panel">
+        <div class="card">
+            <div class="stats-grid">
+                <div class="stat-box"><small>Altitude</small><span id="alt" class="value">0m</span></div>
+                <div class="stat-box"><small>Temp</small><span id="temp" class="value">0°C</span></div>
+                <div class="stat-box"><small>Humidity</small><span id="hum" class="value">0%</span></div>
+                <div class="stat-box"><small>Voltage</small><span id="volt" class="value">4.20V</span></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0; font-size: 1rem; color: var(--accent);">Flight Telemetry Graph</h3>
+            <canvas id="liveChart" style="max-height: 220px;"></canvas>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0; font-size: 1rem; color: var(--accent);">Session Data Sheet</h3>
+            <div class="sheet-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Alt (m)</th>
+                            <th>Temp (°C)</th>
+                            <th>Hum (%)</th>
+                            <th>Volt (V)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sheet-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <aside>
+        <div class="card battery-ui">
+            <h3 style="margin:0; font-size: 1rem;">Power Levels</h3>
+            <div style="display: flex; justify-content: space-between; margin-top: 15px;">
+                <span id="volt-label" style="font-weight:bold; font-family: monospace;">4.20V</span>
+                <span id="pct-label" style="font-weight:bold; color: var(--success);">100%</span>
+            </div>
+            <div class="battery-bar"><div id="batt-fill"></div></div>
+            <small id="status-msg" style="color:#94a3b8; font-weight: bold;">POWER: STABLE</small>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0; font-size: 1rem;">Black Box Storage</h3>
+            <button class="btn btn-download" onclick="downloadCSV()">Download CSV Sheet</button>
+            <button class="btn btn-clear" onclick="clearSheet()">Clear Live Session</button>
+            <button class="btn" style="background: #475569; color: white;" onclick="location.reload()">Restart Battery</button>
+        </div>
+
+        <div class="card" style="background: rgba(56, 189, 248, 0.05);">
+            <h4 style="margin:0; font-size: 0.8rem; color: var(--accent);">Hardware Info</h4>
+            <p style="font-size: 0.8rem; line-height: 1.5;">
+                MCU: ESP32-WROOM<br>
+                SENSORS: DHT11, MPU6050<br>
+                
+            </p>
+        </div>
+    </aside>
+</div>
+
+<script>
+    let sessionData = []; 
+    let currentPct = 100;
+    let currentVolt = 4.20;
+
+    // Initialize Chart.js
+    const ctx = document.getElementById('liveChart').getContext('2d');
+    const liveChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                { label: 'Temp (°C)', borderColor: '#f39c12', data: [], tension: 0.4 },
+                { label: 'Alt (m)', borderColor: '#38bdf8', data: [], tension: 0.4 }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { labels: { color: '#fff' } } },
+            scales: {
+                x: { display: false },
+                y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } }
+            }
+        }
+    });
+
+    // --- MAIN UPDATE FUNCTION ---
+    function updateTelemetry() {
+        const now = new Date().toLocaleTimeString();
+        
+        // 1. SLOW COUNTDOWN LOGIC
+        if (currentPct > 0) {
+            currentPct -= 1; 
+            currentVolt -= 0.009; 
+        }
+
+        const data = {
+            alt: Math.floor(Math.random() * (10 - 38) + 38),
+            temp: (Math.random() * (31 - 29) + 29).toFixed(1),
+            hum: (Math.random() * (20 - 55) + 55).toFixed(1),
+            volt: currentVolt.toFixed(2)
+        };
+
+        // 2. Update Stats Grid
+        document.getElementById('alt').innerText = data.alt + "m";
+        document.getElementById('temp').innerText = data.temp + "°C";
+        document.getElementById('hum').innerText = data.hum + "%";
+        document.getElementById('volt').innerText = data.volt + "V";
+
+        // 3. Update Battery Sidebar
+        const fill = document.getElementById('batt-fill');
+        const pctLabel = document.getElementById('pct-label');
+        const statusMsg = document.getElementById('status-msg');
+        
+        document.getElementById('volt-label').innerText = data.volt + "V";
+        pctLabel.innerText = currentPct + "%";
+        fill.style.width = currentPct + "%";
+
+        // Battery Color Logic
+        if (currentPct > 60) {
+            fill.style.backgroundColor = "var(--success)";
+            pctLabel.style.color = "var(--success)";
+            statusMsg.innerText = "POWER: STABLE";
+        } else if (currentPct > 20) {
+            fill.style.backgroundColor = "var(--warning)";
+            pctLabel.style.color = "var(--warning)";
+            statusMsg.innerText = "POWER: LOW";
+        } else {
+            fill.style.backgroundColor = "var(--danger)";
+            pctLabel.style.color = "var(--danger)";
+            statusMsg.innerText = "CRITICAL: LAND!";
+            document.getElementById('mission-status').style.color = "var(--danger)";
+            document.getElementById('mission-status').innerText = "● EMERGENCY";
+        }
+
+        // 4. Update Data Sheet (Table)
+        const tableBody = document.getElementById('sheet-body');
+        const row = `<tr><td>${now}</td><td>${data.alt}m</td><td>${data.temp}°C</td><td>${data.hum}%</td><td>${data.volt}V</td></tr>`;
+        tableBody.insertAdjacentHTML('afterbegin', row);
+
+        // 5. Save for CSV
+        sessionData.push({ time: now, ...data });
+
+        // 6. Update Graph
+        if(liveChart.data.labels.length > 15) {
+            liveChart.data.labels.shift();
+            liveChart.data.datasets[0].data.shift();
+            liveChart.data.datasets[1].data.shift();
+        }
+        liveChart.data.labels.push(now);
+        liveChart.data.datasets[0].data.push(data.temp);
+        liveChart.data.datasets[1].data.push(data.alt);
+        liveChart.update('none');
+    }
+
+    // CSV Generator
+    function downloadCSV() {
+        if (sessionData.length === 0) return alert("No data recorded!");
+        let csv = "Time,Altitude(m),Temp(C),Humidity(%),Voltage(V)\n";
+        sessionData.forEach(row => {
+            csv += `${row.time},${row.alt},${row.temp},${row.hum},${row.volt}\n`;
+        });
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'drone_blackbox_log.csv';
+        a.click();
+    }
+
+    function clearSheet() {
+        if(confirm("Clear live records?")) {
+            sessionData = [];
+            document.getElementById('sheet-body').innerHTML = "";
+        }
+    }
+
+    // Run every 1 second (1000ms) for smooth 1% countdown
+    setInterval(updateTelemetry, 1000);
+</script>
+
+</body>
+</html>
